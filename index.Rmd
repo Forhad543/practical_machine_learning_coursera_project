@@ -1,0 +1,136 @@
+---
+title: "Practical Machine Learning Coursera Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preview
+
+We would do the followings for Activity prediction:
+
+1. Preprocessing
+2. Exploratory Analysis
+3. Model Selection
+4. Predicting Test Set
+
+
+## Preprocessing
+
+First we load the neccessary package for this project.
+
+```{r  load_neccessary_package , message=FALSE}
+library(caret)
+library(caTools)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(e1071)
+library(randomForest)
+library(gbm)
+```
+
+Now load the data using the provided url.
+
+```{r  load_data, message=FALSE}
+train_data <- read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"))
+test_data <- read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"))
+```
+
+Here we deal with missing values and variables with near zero variance.
+
+```{r cleaning_preprocessing, message=FALSE}
+
+dim(train_data)
+dim(test_data)
+
+sum(sapply(train_data, function(x) sum(is.na(x))) > 0)
+sum(sapply(test_data, function(x) sum(is.na(x))) > 0)
+
+
+split <- sample.split(train_data$classe, SplitRatio = .7)
+
+train <- subset(train_data, split == TRUE)
+test <- subset(train_data, split == FALSE)
+
+
+
+zero_var <- nearZeroVar(train)
+
+train <- train[ , -zero_var]
+test <- test[ , -zero_var ]
+
+lab <- apply(train, 2, function(x) mean(is.na(x))) > 0.95
+
+train <- train[, -which(lab, lab == FALSE)]
+test <- test[, -which(lab, lab == FALSE)]
+
+train <- train[ , -(1:5)]
+test <- test[ , -(1:5)]
+```
+
+After preprocessing we have reduce the variables from 160 to 54.
+
+## Exploratory Analysis
+
+Now it is time to see the dependencies between variables
+```{r corrplot, fig.width=12, fig.height=8}
+correlation_matrix <- cor(train[, -54])
+corrplot(correlation_matrix, method = 'color', type = 'upper', tl.cex = 0.5, tl.col = rgb(0, 0, 1))
+```
+
+Plot shows that darker gradient have higher correlation.
+
+## Model Selection
+We will use Decision Tree, Random Forest and  Gradient Boosting. Will pick the model with best accuracy rate.
+
+### Decision Tree
+```{r decisiontree, message=FALSE}
+mod1 <- rpart(classe ~. , data = train, method = 'class')
+
+pred <- predict(mod1, test, type = 'class')
+conf_dt <- confusionMatrix(pred, test$classe)
+conf_dt
+```
+
+
+### Random Forest
+
+```{r RandomForest, message=FALSE}
+rf <- randomForest(classe ~. , data = train, ntree = 100)
+rf_pred <- predict(rf, test)
+conf_rf <- confusionMatrix(rf_pred, test$classe)
+conf_rf
+```
+
+
+### Gradient Boosting
+
+```{r fradientBoosting, message=FALSE}
+GBM <- gbm(classe ~., data = train, distribution = 'multinomial', n.trees = 100, cv.folds = 5)
+best_iter <- gbm.perf(GBM, method = 'cv')
+
+gbm_pred <- factor(apply(predict(GBM, newdata = test, n.trees = best_iter, type = 'response'), 1, which.max), 
+                   labels = LETTERS[c(1:5)])
+
+conf_gbm <- confusionMatrix(gbm_pred, test$classe)
+conf_gbm
+```
+
+As Random Forest offers the maximum accuracy of 99.66%, we will go with Random Forest Model to predict our test data class variable.
+
+## Predicting Test Set
+
+```{r PredictTest, message=FALSE}
+zero_var_test_data <- nearZeroVar(test_data)
+test_data <- test_data[, -zero_var_test_data]
+
+test_data <- test_data[ , -(1:5)]
+
+test_pred <- predict(rf, test_data)
+table(test_pred)
+
+```
